@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * OpenMANET overlay for the Heltec HT-HC01P Raspberry Pi HAT (HC01P / HC01P V2,
+ * Morse Micro MM6108 over SPI).
+ *
+ * Copy of OpenMANET's mm610x-spi overlay (patch 991-0003) with the pins moved
+ * from the Seeed WM1302 HAT wiring to the Heltec HAT wiring, which is the same
+ * as Morse Micro's own eval-kit HAT. Pins taken from Heltec's
+ * HT-HC01P_Raspberry_Pi_reference_design.PDF:
+ *
+ *   signal    Heltec HAT        OpenMANET stock (Seeed)
+ *   CS        GPIO8  (pin 24)   GPIO8
+ *   SCLK      GPIO11 (pin 23)   GPIO11
+ *   MOSI      GPIO10 (pin 19)   GPIO10
+ *   MISO      GPIO9  (pin 21)   GPIO9
+ *   IRQ       GPIO25 (pin 22)   GPIO5
+ *   RESET_N   GPIO5  (pin 29)   GPIO17
+ *   WAKE      GPIO3  (pin 5)    GPIO23
+ *   BUSY      GPIO7  (pin 26)   GPIO24
+ *
+ * GPIO3 is I2C1 SCL, so I2C1 must be off (dtparam=i2c1=off) when this is used.
+ *
+ * Build:  dtc -@ -I dts -O dtb -o heltec-hc01p-spi.dtbo heltec-hc01p-spi-overlay.dts
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2835", "brcm,bcm2836", "brcm,bcm2837",
+	             "brcm,bcm2708", "brcm,bcm2709", "brcm,bcm2710", "brcm,bcm2711";
+
+	fragment@0 {
+		target = <&spi0>;
+		frag0: __overlay__ {
+			pinctrl-0 = <&spi0_pins &spi0_cs_pins &morse_wake &morse_busy &morse_irq &morse_reset>;
+			cs-gpios = <&gpio 8 1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			mm6108: mm6108@0 {
+				compatible = "morse,mm610x-spi";
+				reg = <0>; /* CE0 */
+				reset-gpios = <&gpio 5 0>;
+				power-gpios = <&gpio 3 0>,	/* WAKE */
+				              <&gpio 7 0>;	/* BUSY */
+				spi-irq-gpios = <&gpio 25 0>;
+				spi-max-frequency = <50000000>;
+				status = "okay";
+			};
+
+			spidev0: spidev@0 {
+				reg = <0>; /* CE0 */
+				status = "disabled";
+			};
+
+			spidev1: spidev@1 {
+				reg = <1>; /* CE1 - GPIO7 is BUSY on this HAT */
+				status = "disabled";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio>;
+		__overlay__ {
+			/* Only CE0; this also frees GPIO7 (CE1) for BUSY */
+			spi0_cs_pins: spi0_cs_pins {
+				brcm,pins = <8>;
+				brcm,function = <1>; /* BCM2835_FSEL_GPIO_OUT */
+				brcm,pull = <2>;     /* PULL UP */
+			};
+			spi0_pins: spi0_pins {
+				brcm,pins = <9 10 11>;
+				brcm,function = <4>; /* BCM2835_FSEL_ALT0 (SPI0) */
+				brcm,pull = <2 2 2>; /* PULL UP */
+			};
+
+			morse_wake: morse_wake {
+				brcm,pins = <3>;
+				brcm,function = <0>; /* BCM2835_FSEL_GPIO_IN */
+				brcm,pull = <2>;     /* PULL UP */
+			};
+
+			morse_busy: morse_busy {
+				brcm,pins = <7>;
+				brcm,function = <0>; /* BCM2835_FSEL_GPIO_IN */
+				brcm,pull = <1>;     /* PULL DOWN */
+			};
+
+			morse_irq: morse_irq {
+				brcm,pins = <25>;
+				brcm,function = <0>; /* BCM2835_FSEL_GPIO_IN */
+				brcm,pull = <2>;     /* PULL UP */
+			};
+
+			morse_reset: morse_reset {
+				brcm,pins = <5>;
+				brcm,function = <0>; /* BCM2835_FSEL_GPIO_IN */
+				brcm,pull = <2>;     /* PULL UP */
+			};
+		};
+	};
+
+	/*
+	 * chipreset.sh / morse_cli.sh find the reset line by the name MM_RESET.
+	 * OpenMANET's Pi 4 base DT puts MM_RESET/MM_WAKE/MM_BUSY on 17/23/24, so
+	 * rename the whole bank to put them on this HAT's pins instead.
+	 */
+	fragment@2 {
+		target = <&gpio>;
+		__overlay__ {
+			gpio-line-names =
+				"ID_SDA", "ID_SCL", "HAT_LED_G", "MM_WAKE",
+				"GPIO4", "MM_RESET", "HAT_LED_R", "MM_BUSY",
+				"SPI_CE0_N", "SPI_MISO", "SPI_MOSI", "SPI_SCLK",
+				"GPIO12", "GPIO13", "TXD1", "RXD1",
+				"HAT_LED_B", "GPIO17", "GPIO18", "GPIO19",
+				"GPIO20", "HAT_BUTTON", "GPIO22", "GPIO23",
+				"GPIO24", "MM_IRQ", "GPIO26", "GPIO27",
+				"RGMII_MDIO", "RGMII_MDC", "CTS0", "RTS0",
+				"TXD0", "RXD0", "SD1_CLK", "SD1_CMD",
+				"SD1_DATA0", "SD1_DATA1", "SD1_DATA2", "SD1_DATA3",
+				"PWM0_MISO", "PWM1_MOSI", "STATUS_LED_G_CLK", "SPIFLASH_CE_N",
+				"SDA0", "SCL0",
+				"RGMII_RXCLK", "RGMII_RXCTL", "RGMII_RXD0", "RGMII_RXD1",
+				"RGMII_RXD2", "RGMII_RXD3", "RGMII_TXCLK", "RGMII_TXCTL",
+				"RGMII_TXD0", "RGMII_TXD1", "RGMII_TXD2", "RGMII_TXD3";
+		};
+	};
+};
